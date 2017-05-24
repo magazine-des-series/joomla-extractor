@@ -1,0 +1,184 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/../vendor/autoload.php';
+
+use Command\ExtractJobCommand;
+use Command\ExtractPersonCommand;
+use Command\ExtractTvSeriesCommand;
+use Command\PingApiCommand;
+use Command\PingDatabaseCommand;
+use Doctrine\DBAL\Configuration;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Extractor\DelegatingExtractor;
+use Extractor\ExtractorInterface;
+use Extractor\JobExtractor;
+use Extractor\PersonExtractor;
+use Extractor\TvSeriesExtractor;
+use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
+use Manager\ApiManager;
+use Manager\DatabaseManager;
+use Normalizer\DelegatingNormalizer;
+use Normalizer\JobNormalizer;
+use Normalizer\NormalizerInterface;
+use Normalizer\PersonNormalizer;
+use Normalizer\TvSeriesNormalizer;
+use Pimple\Container;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\HelperSet;
+use Symfony\Component\Dotenv\Dotenv;
+
+$container = new Container();
+
+$container['application'] = function (Container $container) {
+    $application = new Application('joomla-extractor', 'master');
+    $application->setHelperSet(new HelperSet());
+
+    foreach ($container->keys() as $key) {
+        if (0 === strpos($key, 'command.')) {
+            $application->add($container[$key]);
+        }
+    }
+
+    return $application;
+};
+
+$container['command.extract.job'] = function (Container $container): Command {
+    return new ExtractJobCommand($container['extractor'], $container['manager.api'], $container['normalizer']);
+};
+
+$container['command.extract.person'] = function (Container $container): Command {
+    return new ExtractPersonCommand(
+        $container['extractor'],
+        $container['manager.api'],
+        $container['normalizer']
+    );
+};
+
+$container['command.extract.tv_series'] = function (Container $container): Command {
+    return new ExtractTvSeriesCommand(
+        $container['extractor'],
+        $container['manager.api'],
+        $container['normalizer']
+    );
+};
+
+$container['command.ping.api'] = function (Container $container): Command {
+    return new PingApiCommand($container['manager.api']);
+};
+
+$container['command.ping.database'] = function (Container $container): Command {
+    return new PingDatabaseCommand($container['manager.database']);
+};
+
+$container['extractor'] = function (Container $container): ExtractorInterface {
+    $extractor = new DelegatingExtractor();
+
+    foreach ($container->keys() as $key) {
+        if (0 === strpos($key, 'extractor.')) {
+            $extractor->addExtractor($container[$key]);
+        }
+    }
+
+    return $extractor;
+};
+
+$container['extractor.job'] = function (Container $container): ExtractorInterface {
+    return new JobExtractor($container['manager.database']);
+};
+
+$container['extractor.person'] = function (Container $container): ExtractorInterface {
+    return new PersonExtractor($container['extractor.tv_series'], $container['manager.database']);
+};
+
+$container['extractor.tv_series'] = function (Container $container): ExtractorInterface {
+    return new TvSeriesExtractor($container['manager.database']);
+};
+
+$container['manager.api'] = function (Container $container): ApiManager {
+    return new ApiManager($container['manager.api.client']);
+};
+
+$container['manager.api.client'] = function (Container $container): ClientInterface {
+    return new Client(
+        [
+            'base_uri' => $container['parameters']['API_ENTRYPOINT'],
+            'headers' => [
+                'Accept' => 'application/ld+json',
+                'Content-Type' => 'application/ld+json',
+            ],
+            'http_errors' => false,
+        ]
+    );
+};
+
+$container['manager.database'] = function (Container $container): DatabaseManager {
+    return new DatabaseManager($container['manager.database.connection']);
+};
+
+$container['manager.database.connection'] = function (Container $container): Connection {
+    return DriverManager::getConnection(
+        [
+            'charset' => 'UTF8',
+            'dbname' => $container['parameters']['DATABASE_NAME'],
+            'driver' => 'pdo_mysql',
+            'host' => $container['parameters']['DATABASE_HOST'],
+            'password' => $container['parameters']['DATABASE_PASSWORD'],
+            'user' => $container['parameters']['DATABASE_USER'],
+        ],
+        $container['manager.database.connection.configuration']
+    );
+};
+
+$container['manager.database.connection.configuration'] = function (): Configuration {
+    return new Configuration();
+};
+
+$container['normalizer'] = function (Container $container): NormalizerInterface {
+    $normalizer = new DelegatingNormalizer();
+
+    foreach ($container->keys() as $key) {
+        if (0 === strpos($key, 'normalizer.')) {
+            $normalizer->addNormalizer($container[$key]);
+        }
+    }
+
+    return $normalizer;
+};
+
+$container['normalizer.job'] = function (Container $container): NormalizerInterface {
+    return new JobNormalizer($container['manager.api']);
+};
+
+$container['normalizer.person'] = function (Container $container): NormalizerInterface {
+    return new PersonNormalizer($container['manager.api'], $container['normalizer.job']);
+};
+
+$container['normalizer.tv_series'] = function (Container $container): NormalizerInterface {
+    return new TvSeriesNormalizer($container['manager.api'], $container['normalizer.person']);
+};
+
+$container['parameters'] = function (): array {
+    $parameters = [
+        'API_ENTRYPOINT' => '127.0.0.1',
+
+        'DATABASE_HOST' => '127.0.0.1',
+        'DATABASE_NAME' => 'magazine-des-series',
+        'DATABASE_PASSWORD' => null,
+        'DATABASE_USER' => 'root',
+    ];
+
+    $envFile = __DIR__.'/../.env';
+    if (is_file($envFile) && is_readable($envFile)) {
+        $parameters = array_merge($parameters, (new Dotenv())->parse(file_get_contents($envFile), $envFile));
+    }
+
+    return $parameters;
+};
+
+$container['application']->run();

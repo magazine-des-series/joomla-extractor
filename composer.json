@@ -1,0 +1,44 @@
+{
+    "name": "magazine-des-series/joomla-extractor",
+    "license": "MIT",
+    "type": "project",
+    "authors": [
+        {
+            "name": "Morgan Auchedé",
+            "email": "morgan.auchede@gmail.com",
+            "homepage": "http://github.com/mauchede"
+        },
+        {
+            "name": "Laury Sorriaux",
+            "email": "laury.sorriaux@gmail.com",
+            "homepage": "http://github.com/ginifizz"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "bin-dir": "bin",
+        "sort-packages": true
+    },
+    "require": {
+        "php": ">=7.1",
+        "doctrine/dbal": "^2.5",
+        "doctrine/inflector": "^1.1",
+        "guzzlehttp/guzzle": "^6.2",
+        "myclabs/php-enum": "^1.5",
+        "pimple/pimple": "^3.0",
+        "symfony/console": "@rc",
+        "symfony/dotenv": "@rc"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^6.1"
+    }
+}
